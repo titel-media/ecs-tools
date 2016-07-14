@@ -1,0 +1,158 @@
+#!/usr/bin/env ruby
+#  ecs-deploy: Simple script for deploying docker images to Amazon Elastic Container Service
+#  
+#  Usage: deploy [options]...
+#  
+#  Arguments:
+#  
+#     -k | --aws-access-key  AWS Access Key ID. May also be set as environment variable AWS_ACCESS_KEY_ID
+#     -s | --aws-secret-key  AWS Secret Access Key. May also be set as environment variable AWS_SECRET_ACCESS_KEY
+#     -r | --region          AWS Region Name. May also be set as environment variable AWS_DEFAULT_REGION
+#  
+#     -i | --image           Full repository url to the docker image
+#     -c | --cluster         Specify the name of the cluster to use
+#     -w | --wait-time       Time given to wait until all services have the new task definition running
+#  
+$stderr.sync = true
+require "ecs_deploy"
+
+def usage
+  exec "grep '^#  ' < '#{__FILE__}' | cut -c4-"
+end
+
+class Aws::ECS::Client
+  def upsert_service(options)
+    send(:update_service, options)
+  rescue Aws::ECS::Errors::ServiceNotFoundException
+    options[:service_name] = options.delete(:service)
+    send(:create_service, options)
+  end
+end
+
+# default options
+aws_access_key = ENV["AWS_ACCESS_KEY_ID"]
+aws_secret_key = ENV["AWS_SECRET_ACCESS_KEY"]
+aws_region = ENV["AWS_REGION"] || ENV["AWS_DEFAULT_REGION"]
+image = cluster = nil
+debug = false
+wait_time = 420 # 7 minutes
+
+# parse arguments
+ARGV.options do |opts|
+  # aws options
+  opts.on("-k", "--aws-access-key", String) { |v| aws_access_key = v }
+  opts.on("-s", "--aws-secret-key", String) { |v| aws_secret_key = v }
+  opts.on("-r", "--region=aws-region", String) { |v| aws_region = v }
+  # ecs-deploy options
+  opts.on("-i", "--image=name", String) { |v| image = v }
+  opts.on("-c", "--cluster=name", String) { |v| cluster = v }
+  opts.on("-w", "--wait-time=seconds", Integer) { |v| wait_time = v }
+  # opts.on("-i", "--int=val", Integer)  { |val| integer = val }
+  # opts.on("--list=[x,y,z]", Array)     { |val| list = val }
+  opts.on("--debug") { debug = true }
+  opts.on_tail("-h", "--help", &method(:usage))
+  opts.parse!
+end
+
+# configure Aws
+Aws.config.update(region: aws_region, credentials: Aws::Credentials.new(aws_access_key, aws_secret_key))
+ecs = Aws::ECS::Client.new
+
+config = YAML.load_file("config/ecs_deploy.yml").deep_symbolize_keys
+
+# register new task definitions
+task_definitions = {}
+config[:task_definitions].each do |family, task_definition|
+  definition = deep_dup(task_definition)
+  definition[:family] = family
+  definition[:container_definitions].first[:image] = image
+  response = ecs.register_task_definition(definition)
+  definition[:arn] = response.task_definition.task_definition_arn
+  puts "New task definition: #{definition[:arn]}"
+  task_definitions[family] = definition
+end
+
+def report_run_task_failures(failures)
+  return if failures.empty?
+  failures.each do |failure|
+    STDERR.puts "Error: run task failure '#{failure.reason}'"
+  end
+  exit 1
+end
+
+# handle one off tasks
+config[:one_off_commands].each do |one_off_command|
+  task_definition = task_definitions[one_off_command[:task_family].to_sym]
+  puts "Running '#{one_off_command[:command]}'"
+  response = ecs.run_task(
+    cluster: cluster,
+    task_definition: task_definition[:arn],
+    count: 1,
+    started_by: "ecs-deploy: one_off_commands",
+    overrides: {
+      container_overrides: [
+        {
+          name: task_definition[:container_definitions].first[:name],
+          command: [one_off_command[:command]]
+        }
+      ]
+    }
+  )
+  # handle potential failures
+  report_run_task_failures(response.failures)
+
+  task_arn = response.tasks.first.task_arn
+  print "Waiting for '#{one_off_command[:command]}' to finish"
+  waiting = 0
+  last_now = Time.now
+  task = nil
+  while waiting <= wait_time do
+    task = ecs.describe_tasks(tasks: [task_arn], cluster: cluster).tasks.first
+    break if task.last_status == "STOPPED"
+    print "."
+    waiting += (Time.now - last_now).to_i
+    sleep 5
+  end
+  if waiting > wait_time
+    STDERR.puts "Error: wait time exceeded"
+    exit 1
+  end
+  if task.containers.first.exit_code != 0
+    STDERR.puts "Error: 'one_off_command[:command]' finished with a non-zero exit code! Aborting."
+    exit 1
+  end
+  puts " done!"
+end
+
+# handle services
+task_definition_arns = []
+config[:services].each do |service|
+  task_definition = task_definitions[service[:task_family].to_sym]
+  task_definition_arns << task_definition[:arn]
+
+  ecs.upsert_service(
+    cluster: cluster,
+    service: service[:name],
+    desired_count: service[:desired_count],
+    task_definition: task_definition[:arn],
+    deployment_configuration: service[:deployment_configuration]
+  )
+end
+
+print "Waiting #{wait_time}s until all service tasks come up running"
+waiting = 0
+last_now = Time.now
+while waiting <= wait_time do
+  running_tasks = ecs.describe_tasks(cluster: cluster, tasks: ecs.list_tasks(cluster: cluster, desired_status: "RUNNING").task_arns).tasks
+  break if task_definition_arns.all? { |arn| running_tasks.any? { |task| task.task_definition_arn == arn } }
+  print "."
+  waiting += (Time.now - last_now).to_i
+  sleep 5
+end
+if waiting > wait_time
+  STDERR.puts "Error: wait time exceeded"
+  exit 1
+else
+  puts " done!"
+end
+

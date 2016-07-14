@@ -1,0 +1,70 @@
+#!/usr/bin/env ruby
+#  ecs-console: Simple script for connecting you to a docker instance on Amazon Elastic Container Service
+#  
+#  Usage: ecs-console [options] <command>
+#  
+#  Arguments:
+#  
+#     -k | --aws-access-key  AWS Access Key ID. May also be set as environment variable AWS_ACCESS_KEY_ID
+#     -s | --aws-secret-key  AWS Secret Access Key. May also be set as environment variable AWS_SECRET_ACCESS_KEY
+#     -r | --region          AWS Region Name. May also be set as environment variable AWS_DEFAULT_REGION
+#     -c | --cluster         Specify the name of the cluster to use
+#     -p | --private-key     Path to the EC2 *.pem private key file (default: '~/.ssh/<cluster>.pem')
+#  
+#     -i | --image           Full repository url to the docker image
+#     -n | --container-name  Specify the name of the container definition of your ecs_deploy.yml
+#     -s | --service         Attach to a running service (alternative to image/container)
+#  
+$stderr.sync = true
+require "ecs_deploy"
+require "net/scp"
+
+def usage
+  exec "grep '^#  ' < '#{__FILE__}' | cut -c4-"
+end
+
+# default options
+aws_access_key = ENV["AWS_ACCESS_KEY_ID"]
+aws_secret_key = ENV["AWS_SECRET_ACCESS_KEY"]
+aws_region = ENV["AWS_REGION"] || ENV["AWS_DEFAULT_REGION"]
+image = cluster = container = service = private_key = nil
+
+# parse arguments
+ARGV.options do |opts|
+  # aws/ecs options
+  opts.on("-k", "--aws-access-key", String) { |v| aws_access_key = v }
+  opts.on("-s", "--aws-secret-key", String) { |v| aws_secret_key = v }
+  opts.on("-r", "--region=aws-region", String) { |v| aws_region = v }
+  opts.on("-c", "--cluster=name", String) { |v| cluster = v }
+  opts.on("-p", "--private-key=path", String) { |v| private_key = v  }
+  # ecs-console options
+  opts.on("-i", "--image=name", String) { |v| image = v }
+  opts.on("-n", "--container-name=name", String) { |v| container = v }
+  opts.on("-s", "--service=name", String) { |v| service = v }
+
+  opts.on_tail("-h", "--help", &method(:usage))
+  opts.parse!
+end
+
+private_key ||= "~/.ssh/#{cluster}.pem"
+command = ARGV.join(" ")
+
+# configure Aws
+Aws.config.update(region: aws_region, credentials: Aws::Credentials.new(aws_access_key, aws_secret_key))
+ec2 = Aws::EC2::Client.new
+ecs = Aws::ECS::Client.new
+
+config = YAML.load_file("config/ecs_deploy.yml").deep_symbolize_keys
+container_definition = config[:container_definitions][container.to_sym]
+
+container_instance_arns = ecs.list_container_instances(cluster: cluster).container_instance_arns
+instance_id = ecs.describe_container_instances(cluster: cluster, container_instances: container_instance_arns).container_instances.sample.ec2_instance_id
+public_dns_name = ec2.describe_instances(instance_ids: [instance_id]).reservations.first.instances.first.public_dns_name
+
+environment_data = container_definition[:environment].map { |env| "#{env[:name]}=#{env[:value]}" }.join("\n")
+remote_env_file = "/home/ec2-user/.ecs-console.#{Time.now.to_f}.tmp.env"
+Net::SCP.upload!(public_dns_name, "ec2-user", StringIO.new(environment_data), remote_env_file, ssh: {keys: [File.expand_path(private_key)]})
+
+puts "Connecting to ec2-user@#{public_dns_name}, running '#{command}' inside #{image}"
+exec %Q[ssh -ti "#{private_key}" ec2-user@#{public_dns_name} "chmod 400 #{remote_env_file} ; docker run --rm --env-file=#{remote_env_file} -ti #{image} #{command} ; rm -f #{remote_env_file}"]
+

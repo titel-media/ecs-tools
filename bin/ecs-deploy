@@ -118,7 +118,7 @@ config[:one_off_commands].each do |one_off_command|
     exit 1
   end
   if task.containers.first.exit_code != 0
-    STDERR.puts "Error: 'one_off_command[:command]' finished with a non-zero exit code! Aborting."
+    STDERR.puts "Error: '#{one_off_command[:command]}' finished with a non-zero exit code! Aborting."
     exit 1
   end
   puts " done!"

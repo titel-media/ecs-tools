@@ -7,7 +7,7 @@ function usage() {
   cat <<EOM
   ##### ecr-build #####
   Simple script for building docker images and pushing them to Amazon Elastic Container Service Registry (ECR)
-  https://github.com/Overbryd/ecr-build
+  https://github.com/Overbryd/ecr-tools
 
   Arguments:
 

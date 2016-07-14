@@ -91,7 +91,8 @@ cmd "docker tag #{force_tag ? "-f" : ""} #{image_name} #{target}"
 # login
 authorization_response = ecr.get_authorization_token
 authorization_data = authorization_response.authorization_data.first
-cmd "docker login -u AWS -p #{authorization_data.authorization_token} -e none #{authorization_data.proxy_endpoint}"
+user, token = Base64.decode64(authorization_data.authorization_token).split(":")
+cmd "docker login -u '#{user}' -p '#{token}' -e none #{authorization_data.proxy_endpoint}"
 
 # push the image
 cmd "docker push #{target}"

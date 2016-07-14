@@ -14,6 +14,7 @@ Gem::Specification.new do |s|
   s.bindir      = "bin"
   s.executables << "ecs-deploy"
   s.executables << "ecs-console"
+  s.executables << "ecr-build"
   s.homepage    = "https://github.com/Overbryd/ecs-tools"
   s.license     = "MIT"
 

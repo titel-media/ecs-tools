@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+set -e
+[ -n "$DEBUG" ] && set -x
+
+function usage() {
+  set -e
+  cat <<EOM
+  ##### ecr-build #####
+  Simple script for building docker images and pushing them to Amazon Elastic Container Service Registry (ECR)
+  https://github.com/Overbryd/ecr-build
+
+  Arguments:
+
+      -f | --file            Location of the Dockerfile (default: Dockerfile)
+      -r | --repository-url  Specify the ECR repository url (default: url from first repository)
+      -t | --tag             Tag of the docker image, eg. latest
+                             Format: [a-z0-9]+[a-z0-9._-]*
+           --force-tag       Overwrite existing tags
+EOM
+
+  exit 2
+}
+if [ $# == 0 ]; then usage; fi
+
+function fetch_repository_url() {
+  REPOSITORY_URL=$(aws ecr describe-repositories | jq --raw-output '.repositories[0].repositoryUri')
+}
+
+function format_image_tag() {
+  local value=$1
+  if [[ ${#value} -gt 30 ]]; then
+    >&2 echo "Warning: Provided image tag is longer than 30 characters. Resulting tag will be cut short."
+  fi
+  echo $value | sed 's/[^a-z0-9_.-]/./g' | cut -c1-30
+  exit 0
+}
+
+# set defaults
+DOCKERFILE="Dockerfile"
+IMAGE_TAG="latest"
+FORCE_TAG=""
+
+# consume arguments
+while [[ $# > 0 ]]; do
+  case "$1" in
+    format-image-tag)
+      format_image_tag "$2"
+      ;;
+    -f|--file)
+      DOCKERFILE="$2"
+      shift
+      ;;
+    -r|--repository-url)
+      REPOSITORY_URL="$2"
+      shift
+      ;;
+    -t|--tag)
+      IMAGE_TAG="$2"
+      shift
+      ;;
+    --force-tag)
+      FORCE_TAG="-f"
+      ;;
+    *)
+      usage
+    ;;
+  esac
+  shift
+done
+
+# check variables
+if [[ ! -f "$DOCKERFILE" ]]; then
+  echo "Dockerfile does not exist at $DOCKERFILE"
+  exit 1
+fi
+
+if [[ "x$REPOSITORY_URL" == "x" ]]; then
+  fetch_repository_url
+  echo "Using '$REPOSITORY_URL' repository"
+fi
+if [[ "x$REPOSITORY_URL" == "x" || "$REPOSITORY_URL" == "null" ]]; then
+  echo "Could not find a repository url, maybe you need to create a repository?"
+  exit 1
+fi
+
+# set IMAGE_NAME from REPOSITORY_URL
+IMAGE_NAME="${REPOSITORY_URL##*/}:$IMAGE_TAG"
+
+# build the docker image
+docker build --file $DOCKERFILE --tag $IMAGE_NAME .
+
+# tag the docker image
+docker tag $FORCE_TAG $IMAGE_NAME $REPOSITORY_URL:$IMAGE_TAG
+
+# login
+DOCKER_LOGIN=$(aws ecr get-login)
+$DOCKER_LOGIN
+
+# push the image
+docker push $REPOSITORY_URL:$IMAGE_TAG
+
+# echo the new image
+echo "$REPOSITORY_URL:$IMAGE_TAG"
+

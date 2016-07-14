@@ -40,6 +40,12 @@ def cmd(command)
   end
 end
 
+if ARGV.first == "format-image-tag"
+  ARGV.shift
+  puts format_image_tag(ARGV.shift)
+  exit 0
+end
+
 # default options
 aws_access_key = ENV["AWS_ACCESS_KEY_ID"]
 aws_secret_key = ENV["AWS_SECRET_ACCESS_KEY"]

@@ -1,104 +1,99 @@
-#!/usr/bin/env bash
-set -e
-[ -n "$DEBUG" ] && set -x
+#!/usr/bin/env ruby
+#  ecr-build: Simple script for building docker images and pushing them to Amazon Elastic Container Service Registry (ECR)
+#  
+#  Usage: ecr-build [options]...
+#  
+#  Arguments:
+#  
+#     -k | --aws-access-key  AWS Access Key ID. May also be set as environment variable AWS_ACCESS_KEY_ID
+#     -s | --aws-secret-key  AWS Secret Access Key. May also be set as environment variable AWS_SECRET_ACCESS_KEY
+#     -r | --region          AWS Region Name. May also be set as environment variable AWS_DEFAULT_REGION
+#  
+#     -f | --file            Location of the Dockerfile (default: Dockerfile)
+#     -r | --repository-url  Specify the ECR repository url (default: url from first repository)
+#     -t | --tag             Tag of the docker image, eg. latest
+#  
+require "open3"
+$stderr.sync = true
+require "ecs_deploy"
 
-function usage() {
-  set -e
-  cat <<EOM
-  ##### ecr-build #####
-  Simple script for building docker images and pushing them to Amazon Elastic Container Service Registry (ECR)
-  https://github.com/Overbryd/ecr-tools
+def usage
+  exec "grep '^#  ' < '#{__FILE__}' | cut -c4-"
+end
 
-  Arguments:
+def format_image_tag(tag)
+  STDERR.puts "Warning: Provided image tag is longer than 30 characters. Resulting tag will be cut short." if tag.length > 30
+  tag[0..29].gsub(/[^a-z0-9_.-]/, ".")
+end
 
-      -f | --file            Location of the Dockerfile (default: Dockerfile)
-      -r | --repository-url  Specify the ECR repository url (default: url from first repository)
-      -t | --tag             Tag of the docker image, eg. latest
-                             Format: [a-z0-9]+[a-z0-9._-]*
-           --force-tag       Overwrite existing tags
-EOM
+def cmd(command)
+  # popen2e merges stdout and stderr
+  Open3.popen2e(command) do |stdin, output, thread|
+    while line = output.gets do
+      puts line
+    end
+    process_status = thread.value
+    unless process_status.success?
+      STDERR.puts "Error: '#{command}' failed with status #{process_status.exitstatus}"
+      exit 1
+    end
+  end
+end
 
-  exit 2
-}
-if [ $# == 0 ]; then usage; fi
+# default options
+aws_access_key = ENV["AWS_ACCESS_KEY_ID"]
+aws_secret_key = ENV["AWS_SECRET_ACCESS_KEY"]
+aws_region = ENV["AWS_REGION"] || ENV["AWS_DEFAULT_REGION"]
+dockerfile = "Dockerfile"
+repository = nil
+image_tag = "latest"
+force_tag = false
 
-function fetch_repository_url() {
-  REPOSITORY_URL=$(aws ecr describe-repositories | jq --raw-output '.repositories[0].repositoryUri')
-}
+# parse arguments
+ARGV.options do |opts|
+  # aws options
+  opts.on("-k", "--aws-access-key", String) { |v| aws_access_key = v }
+  opts.on("-s", "--aws-secret-key", String) { |v| aws_secret_key = v }
+  opts.on("-r", "--region=aws-region", String) { |v| aws_region = v }
+  # ecr-build options
+  opts.on("-f", "--file=name", String) { |v| dockerfile = v }
+  opts.on("-r", "--repository-url=url", String) { |v| repository = v }
+  opts.on("-t", "--tag=name", String) { |v| image_tag = v }
+  opts.on("--force-tag") { |v| force_tag = true }
+  opts.on_tail("-h", "--help", &method(:usage))
+  opts.parse!
+end
 
-function format_image_tag() {
-  local value=$1
-  if [[ ${#value} -gt 30 ]]; then
-    >&2 echo "Warning: Provided image tag is longer than 30 characters. Resulting tag will be cut short."
-  fi
-  echo $value | sed 's/[^a-z0-9_.-]/./g' | cut -c1-30
-  exit 0
-}
-
-# set defaults
-DOCKERFILE="Dockerfile"
-IMAGE_TAG="latest"
-FORCE_TAG=""
-
-# consume arguments
-while [[ $# > 0 ]]; do
-  case "$1" in
-    format-image-tag)
-      format_image_tag "$2"
-      ;;
-    -f|--file)
-      DOCKERFILE="$2"
-      shift
-      ;;
-    -r|--repository-url)
-      REPOSITORY_URL="$2"
-      shift
-      ;;
-    -t|--tag)
-      IMAGE_TAG="$2"
-      shift
-      ;;
-    --force-tag)
-      FORCE_TAG="-f"
-      ;;
-    *)
-      usage
-    ;;
-  esac
-  shift
-done
-
-# check variables
-if [[ ! -f "$DOCKERFILE" ]]; then
-  echo "Dockerfile does not exist at $DOCKERFILE"
+unless File.exist?(dockerfile)
+  STDERR.puts "Dockerfile does not exist at #{`pwd`.strip}/#{dockerfile}"
   exit 1
-fi
+end
 
-if [[ "x$REPOSITORY_URL" == "x" ]]; then
-  fetch_repository_url
-  echo "Using '$REPOSITORY_URL' repository"
-fi
-if [[ "x$REPOSITORY_URL" == "x" || "$REPOSITORY_URL" == "null" ]]; then
-  echo "Could not find a repository url, maybe you need to create a repository?"
+unless repository
+  STDERR.puts "Repository url must be defined using -r/--repository-url=url"
   exit 1
-fi
+end
 
-# set IMAGE_NAME from REPOSITORY_URL
-IMAGE_NAME="${REPOSITORY_URL##*/}:$IMAGE_TAG"
+# configure Aws
+Aws.config.update(region: aws_region, credentials: Aws::Credentials.new(aws_access_key, aws_secret_key))
+ecr = Aws::ECR::Client.new
+
+image_tag = format_image_tag(image_tag)
+image_name = repository.sub(/\/.*$/, ":#{image_tag}")
+target = "#{repository}:#{image_tag}"
 
 # build the docker image
-docker build --file $DOCKERFILE --tag $IMAGE_NAME .
+cmd "docker build --file #{dockerfile} --tag #{image_name} ."
 
 # tag the docker image
-docker tag $FORCE_TAG $IMAGE_NAME $REPOSITORY_URL:$IMAGE_TAG
+cmd "docker tag #{force_tag ? "-f" : ""} #{image_name} #{target}"
 
 # login
-DOCKER_LOGIN=$(aws ecr get-login)
-$DOCKER_LOGIN
+authorization_response = ecr.get_authorization_token
+authorization_data = authorization_response.authorization_data.first
+cmd "docker login -u AWS -p #{authorization_data.authorization_token} -e none #{authorization_data.proxy_endpoint}"
 
 # push the image
-docker push $REPOSITORY_URL:$IMAGE_TAG
-
-# echo the new image
-echo "$REPOSITORY_URL:$IMAGE_TAG"
+cmd "docker push #{target}"
+puts target
 

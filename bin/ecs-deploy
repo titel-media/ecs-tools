@@ -40,8 +40,8 @@ wait_time = 420 # 7 minutes
 # parse arguments
 ARGV.options do |opts|
   # aws options
-  opts.on("-k", "--aws-access-key", String) { |v| aws_access_key = v }
-  opts.on("-s", "--aws-secret-key", String) { |v| aws_secret_key = v }
+  opts.on("-k", "--aws-access-key=key", String) { |v| aws_access_key = v }
+  opts.on("-s", "--aws-secret-key=secret", String) { |v| aws_secret_key = v }
   opts.on("-r", "--region=aws-region", String) { |v| aws_region = v }
   # ecs-deploy options
   opts.on("-i", "--image=name", String) { |v| image = v }
@@ -50,7 +50,7 @@ ARGV.options do |opts|
   # opts.on("-i", "--int=val", Integer)  { |val| integer = val }
   # opts.on("--list=[x,y,z]", Array)     { |val| list = val }
   opts.on("--debug") { debug = true }
-  opts.on_tail("-h", "--help", &method(:usage))
+  opts.on_tail("-h", "--help") { usage }
   opts.parse!
 end
 

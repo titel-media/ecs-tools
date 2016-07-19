@@ -58,15 +58,15 @@ force_tag = false
 # parse arguments
 ARGV.options do |opts|
   # aws options
-  opts.on("-k", "--aws-access-key", String) { |v| aws_access_key = v }
-  opts.on("-s", "--aws-secret-key", String) { |v| aws_secret_key = v }
+  opts.on("-k", "--aws-access-key=key", String) { |v| aws_access_key = v }
+  opts.on("-s", "--aws-secret-key=secret", String) { |v| aws_secret_key = v }
   opts.on("-r", "--region=aws-region", String) { |v| aws_region = v }
   # ecr-build options
   opts.on("-f", "--file=name", String) { |v| dockerfile = v }
   opts.on("-r", "--repository-url=url", String) { |v| repository = v }
   opts.on("-t", "--tag=name", String) { |v| image_tag = v }
   opts.on("--force-tag") { |v| force_tag = true }
-  opts.on_tail("-h", "--help", &method(:usage))
+  opts.on_tail("-h", "--help") { usage }
   opts.parse!
 end
 

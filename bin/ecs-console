@@ -42,7 +42,7 @@ ARGV.options do |opts|
   opts.on("-n", "--container-name=name", String) { |v| container = v }
   opts.on("-s", "--service=name", String) { |v| service = v }
 
-  opts.on_tail("-h", "--help", &method(:usage))
+  opts.on_tail("-h", "--help") { usage }
   opts.parse!
 end
 

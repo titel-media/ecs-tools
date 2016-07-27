@@ -66,5 +66,11 @@ remote_env_file = "/home/ec2-user/.ecs-console.#{Time.now.to_f}.tmp.env"
 Net::SCP.upload!(public_dns_name, "ec2-user", StringIO.new(environment_data), remote_env_file, ssh: {keys: [File.expand_path(private_key)]})
 
 puts "Connecting to ec2-user@#{public_dns_name}, running '#{command}' inside #{image}"
-exec %Q[ssh -ti "#{private_key}" ec2-user@#{public_dns_name} "chmod 400 #{remote_env_file} ; docker run --rm --env-file=#{remote_env_file} -ti #{image} #{command} ; rm -f #{remote_env_file}"]
+ssh_command = [
+  "chmod 400 #{remote_env_file}",
+  "\\$(aws ecr get-login --region #{aws_region})",
+  "docker run --rm --env-file=#{remote_env_file} -ti #{image} #{command}",
+  "rm -f #{remote_env_file}"
+].join("; ")
+exec %Q[ssh -ti "#{private_key}" ec2-user@#{public_dns_name} "#{ssh_command}"]
 

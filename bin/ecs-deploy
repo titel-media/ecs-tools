@@ -12,6 +12,7 @@
 #     -i | --image           Full repository url to the docker image
 #     -c | --cluster         Specify the name of the cluster to use
 #     -w | --wait-time       Time given to wait until all services have the new task definition running
+#     -f | --file            ECS deploy configuration file (default: config/ecs_deploy.yml)
 #  
 $stderr.sync = true
 require "ecs_deploy"
@@ -23,7 +24,7 @@ end
 class Aws::ECS::Client
   def upsert_service(options)
     send(:update_service, options)
-  rescue Aws::ECS::Errors::ServiceNotFoundException
+  rescue Aws::ECS::Errors::ServiceNotFoundException, Aws::ECS::Errors::ServiceNotActiveException
     options[:service_name] = options.delete(:service)
     send(:create_service, options)
   end
@@ -36,6 +37,7 @@ aws_region = ENV["AWS_REGION"] || ENV["AWS_DEFAULT_REGION"]
 image = cluster = nil
 debug = false
 wait_time = 420 # 7 minutes
+config_file = "config/ecs_deploy.yml"
 
 # parse arguments
 ARGV.options do |opts|
@@ -47,6 +49,7 @@ ARGV.options do |opts|
   opts.on("-i", "--image=name", String) { |v| image = v }
   opts.on("-c", "--cluster=name", String) { |v| cluster = v }
   opts.on("-w", "--wait-time=seconds", Integer) { |v| wait_time = v }
+  opts.on("-f", "--file=path", String) { |v| config_file = v }
   # opts.on("-i", "--int=val", Integer)  { |val| integer = val }
   # opts.on("--list=[x,y,z]", Array)     { |val| list = val }
   opts.on("--debug") { debug = true }
@@ -58,7 +61,7 @@ end
 Aws.config.update(region: aws_region, credentials: Aws::Credentials.new(aws_access_key, aws_secret_key))
 ecs = Aws::ECS::Client.new
 
-config = YAML.load_file("config/ecs_deploy.yml").deep_symbolize_keys
+config = YAML.load_file(config_file).deep_symbolize_keys
 
 # register new task definitions
 task_definitions = {}

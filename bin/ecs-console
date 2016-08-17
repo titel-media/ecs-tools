@@ -14,6 +14,7 @@
 #     -i | --image           Full repository url to the docker image
 #     -n | --container-name  Specify the name of the container definition of your ecs_deploy.yml
 #     -s | --service         Attach to a running service (alternative to image/container)
+#     -f | --file            Use the following ecs config file (default: config/ecs_deploy.yml)
 #  
 $stderr.sync = true
 require "ecs_deploy"
@@ -28,6 +29,7 @@ aws_access_key = ENV["AWS_ACCESS_KEY_ID"]
 aws_secret_key = ENV["AWS_SECRET_ACCESS_KEY"]
 aws_region = ENV["AWS_REGION"] || ENV["AWS_DEFAULT_REGION"]
 image = cluster = container = service = private_key = nil
+file = "config/ecs_deploy.yml"
 
 # parse arguments
 ARGV.options do |opts|
@@ -41,6 +43,7 @@ ARGV.options do |opts|
   opts.on("-i", "--image=name", String) { |v| image = v }
   opts.on("-n", "--container-name=name", String) { |v| container = v }
   opts.on("-s", "--service=name", String) { |v| service = v }
+  opts.on("-f", "--file=path", String) { |v| file = v }
 
   opts.on_tail("-h", "--help") { usage }
   opts.parse!
@@ -54,7 +57,7 @@ Aws.config.update(region: aws_region, credentials: Aws::Credentials.new(aws_acce
 ec2 = Aws::EC2::Client.new
 ecs = Aws::ECS::Client.new
 
-config = YAML.load_file("config/ecs_deploy.yml").deep_symbolize_keys
+config = YAML.load_file(file).deep_symbolize_keys
 container_definition = config[:container_definitions][container.to_sym]
 
 container_instance_arns = ecs.list_container_instances(cluster: cluster).container_instance_arns
@@ -73,4 +76,3 @@ ssh_command = [
   "rm -f #{remote_env_file}"
 ].join("; ")
 exec %Q[ssh -ti "#{private_key}" ec2-user@#{public_dns_name} "#{ssh_command}"]
-

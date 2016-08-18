@@ -53,7 +53,6 @@ aws_region = ENV["AWS_REGION"] || ENV["AWS_DEFAULT_REGION"]
 dockerfile = "Dockerfile"
 repository = nil
 image_tag = "latest"
-force_tag = false
 
 # parse arguments
 ARGV.options do |opts|
@@ -65,7 +64,6 @@ ARGV.options do |opts|
   opts.on("-f", "--file=name", String) { |v| dockerfile = v }
   opts.on("-r", "--repository-url=url", String) { |v| repository = v }
   opts.on("-t", "--tag=name", String) { |v| image_tag = v }
-  opts.on("--force-tag") { |v| force_tag = true }
   opts.on_tail("-h", "--help") { usage }
   opts.parse!
 end
@@ -92,7 +90,7 @@ target = "#{repository}:#{image_tag}"
 cmd "docker build --file #{dockerfile} --tag #{image_name} ."
 
 # tag the docker image
-cmd "docker tag #{force_tag ? "-f" : ""} #{image_name} #{target}"
+cmd "docker tag #{image_name} #{target}"
 
 # login
 authorization_response = ecr.get_authorization_token

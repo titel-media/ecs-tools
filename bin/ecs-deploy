@@ -113,7 +113,9 @@ config[:one_off_commands].each do |one_off_command|
     task = ecs.describe_tasks(tasks: [task_arn], cluster: cluster).tasks.first
     break if task.last_status == "STOPPED"
     print "."
-    waiting += (Time.now - last_now).to_i
+    now = Time.now
+    waiting += (now - last_now).to_i
+    last_now = now
     sleep 5
   end
   if waiting > wait_time

@@ -59,6 +59,7 @@ ecs = Aws::ECS::Client.new
 
 config = YAML.load_file(file).deep_symbolize_keys
 container_definition = config[:container_definitions][container.to_sym]
+cluster ||= config[:cluster]
 
 container_instance_arns = ecs.list_container_instances(cluster: cluster).container_instance_arns
 instance_id = ecs.describe_container_instances(cluster: cluster, container_instances: container_instance_arns).container_instances.sample.ec2_instance_id

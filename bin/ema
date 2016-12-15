@@ -1,0 +1,20 @@
+#!/usr/bin/env ruby
+require "main"
+require "aws-sdk"
+require "byebug"
+
+Main do
+  def run
+    exit_success!
+  end
+
+  mode 'list' do
+    aws_access_key = ENV["AWS_ACCESS_KEY_ID"]
+    aws_secret_key = ENV["AWS_SECRET_ACCESS_KEY"]
+    aws_region = ENV["AWS_REGION"] || ENV["AWS_DEFAULT_REGION"]
+    Aws.config.update(region: aws_region, credentials: Aws::Credentials.new(aws_access_key, aws_secret_key))
+    client = Aws::ECS::Client.new
+    byebug
+  end
+end
+

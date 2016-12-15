@@ -98,7 +98,7 @@ config.fetch(:one_off_commands, []).each do |one_off_command|
       container_overrides: [
         {
           name: task_definition[:container_definitions].first[:name],
-          command: [one_off_command[:command]]
+          command: Array(one_off_command[:command])
         }
       ]
     }

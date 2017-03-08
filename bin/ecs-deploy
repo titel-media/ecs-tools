@@ -70,7 +70,7 @@ task_definitions = {}
 config[:task_definitions].each do |family, task_definition|
   definition = deep_dup(task_definition)
   definition[:family] = family
-  definition[:container_definitions].first[:image] = image if image
+  definition[:container_definitions].each { |definition| definition[:image] = image } if image
   response = ecs.register_task_definition(definition)
   definition[:arn] = response.task_definition.task_definition_arn
   puts "New task definition: #{definition[:arn]}"

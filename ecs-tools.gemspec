@@ -18,8 +18,8 @@ Gem::Specification.new do |s|
   s.homepage    = "https://github.com/Overbryd/ecs-tools"
   s.license     = "MIT"
 
-  s.add_runtime_dependency "aws-sdk", "~> 2"
-  s.add_runtime_dependency "net-ssh", "~> 3.2"
-  s.add_runtime_dependency "net-scp", "~> 1.2"
+  s.add_runtime_dependency 'aws-sdk', '~> 2.8.0', '>= 2.8.14'
+  s.add_runtime_dependency 'net-ssh', '~> 3.2'
+  s.add_runtime_dependency 'net-scp', '~> 1.2'
 end
 

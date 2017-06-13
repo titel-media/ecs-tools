@@ -19,20 +19,25 @@
 $stderr.sync = true
 require "ecs_deploy"
 require "net/scp"
+require 'byebug'
 
 def usage
   exec "grep '^#  ' < '#{__FILE__}' | cut -c4-"
+end
+
+def repository_slug
+  `git remote -v`.scan(/origin.+github.com:([^\.]+)\.git/).flatten.first
 end
 
 # default options
 aws_access_key = ENV["AWS_ACCESS_KEY_ID"]
 aws_secret_key = ENV["AWS_SECRET_ACCESS_KEY"]
 aws_region = ENV["AWS_REGION"] || ENV["AWS_DEFAULT_REGION"]
-image = cluster = container = service = private_key = nil
-file = "config/ecs_deploy.yml"
+file = branch = image = cluster = container = service = private_key = nil
 
 # parse arguments
 ARGV.options do |opts|
+  opts.on("-b", "--branch=git-branch", String) { |v| branch = v }
   # aws/ecs options
   opts.on("-k", "--aws-access-key", String) { |v| aws_access_key = v }
   opts.on("-s", "--aws-secret-key", String) { |v| aws_secret_key = v }
@@ -49,17 +54,28 @@ ARGV.options do |opts|
   opts.parse!
 end
 
-private_key ||= "~/.ssh/#{cluster}.pem"
+file ||= "config/ecs_#{branch}.yml"
 command = ARGV.join(" ")
 
 # configure Aws
 Aws.config.update(region: aws_region, credentials: Aws::Credentials.new(aws_access_key, aws_secret_key))
 ec2 = Aws::EC2::Client.new
 ecs = Aws::ECS::Client.new
+unless image
+  ecr = Aws::ECR::Client.new
+  repository_uri = ecr.describe_repositories.repositories.find { |repository| repository.repository_name == repository_slug }.repository_uri
+  image_details = ecr.describe_images(repository_name: repository_slug).image_details
+  image_details = image_details.select { |image_detail| image_detail.image_tags&.first.to_s =~ /^#{branch}/ }
+  last_image_tag = image_details.sort_by(&:image_pushed_at).last.image_tags.first
+  image = "#{repository_uri}:#{last_image_tag}"
+end
 
 config = YAML.load_file(file).deep_symbolize_keys
+container ||= config[:container_definitions].keys.first
 container_definition = config[:container_definitions][container.to_sym]
 cluster ||= config[:cluster]
+cluster_name = cluster.sub(/-ECSCluster.+$/, '')
+private_key ||= "~/.ssh/#{cluster_name}.pem"
 
 container_instance_arns = ecs.list_container_instances(cluster: cluster).container_instance_arns
 instance_id = ecs.describe_container_instances(cluster: cluster, container_instances: container_instance_arns).container_instances.sample.ec2_instance_id

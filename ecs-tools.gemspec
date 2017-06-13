@@ -1,7 +1,7 @@
 Gem::Specification.new do |s|
   s.name        = "ecs-tools"
-  s.version     = "0.0.3"
-  s.date        = "2017-03-08"
+  s.version     = "0.0.4"
+  s.date        = "2017-06-13"
   s.summary     = "AWS ECS deployment"
   s.description = "Deploy your containerized application into Amazon Elastic Container Service"
   s.authors     = ["Lukas Rieder"]

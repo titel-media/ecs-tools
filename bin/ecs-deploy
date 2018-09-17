@@ -1,19 +1,19 @@
 #!/usr/bin/env ruby
 #  ecs-deploy: Simple script for deploying docker images to Amazon Elastic Container Service
-#  
+#
 #  Usage: deploy [options]...
-#  
+#
 #  Arguments:
-#  
+#
 #     -k | --aws-access-key  AWS Access Key ID. May also be set as environment variable AWS_ACCESS_KEY_ID
 #     -s | --aws-secret-key  AWS Secret Access Key. May also be set as environment variable AWS_SECRET_ACCESS_KEY
 #     -r | --region          AWS Region Name. May also be set as environment variable AWS_DEFAULT_REGION
-#  
+#
 #     -i | --image           Full repository url to the docker image
 #     -c | --cluster         Specify the name of the cluster to use
 #     -w | --wait-time       Time given to wait until all services have the new task definition running
 #     -f | --file            ECS deploy configuration file (default: config/ecs_deploy.yml)
-#  
+#
 $stderr.sync = true
 require "ecs_deploy"
 
@@ -113,7 +113,7 @@ config.fetch(:one_off_commands, []).each do |one_off_command|
   task = nil
   while waiting <= wait_time do
     task = ecs.describe_tasks(tasks: [task_arn], cluster: cluster).tasks.first
-    break if task.last_status == "STOPPED"
+    break if task.nil? || task.last_status == "STOPPED"
     print "."
     now = Time.now
     waiting += (now - last_now).to_i
@@ -162,4 +162,3 @@ if waiting > wait_time
 else
   puts " done!"
 end
-

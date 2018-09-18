@@ -14,6 +14,7 @@
 #     -w | --wait-time       Time given to wait until all services have the new task definition running
 #     -f | --file            ECS deploy configuration file (default: config/ecs_deploy.yml)
 #
+$stdout.sync = true
 $stderr.sync = true
 require "ecs_deploy"
 

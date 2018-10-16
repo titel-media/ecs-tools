@@ -37,7 +37,7 @@ aws_secret_key = ENV["AWS_SECRET_ACCESS_KEY"]
 aws_region = ENV["AWS_REGION"] || ENV["AWS_DEFAULT_REGION"]
 image = cluster = nil
 debug = false
-wait_time = ENV.fetch('ECS_WAIT_TIME', 420) # 7 minutes
+wait_time = ENV.fetch('ECS_WAIT_TIME', 420).to_i # 7 minutes
 config_file = "config/ecs_deploy.yml"
 
 # parse arguments
